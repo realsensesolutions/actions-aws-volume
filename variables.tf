@@ -14,14 +14,14 @@ variable "vpc_id" {
   default     = ""
 }
 
-variable "subnet_ids" {
-  description = "Comma-separated list of subnet IDs for EFS mount targets (optional - uses default subnets if not provided)"
+variable "subnet_private_ids" {
+  description = "Comma-separated list of private subnet IDs for EFS mount targets (optional - uses default subnets if not provided)"
   type        = string
   default     = ""
 }
 
-variable "security_group_ids" {
-  description = "Comma-separated list of security group IDs for EFS (optional - creates new security group if not provided)"
+variable "sg_private_id" {
+  description = "Private security group ID for EFS (optional - creates new security group if not provided)"
   type        = string
   default     = ""
 }

@@ -1,9 +1,9 @@
 locals {
   volume_name = var.name
   # Parse comma-separated subnet IDs into a list
-  provided_subnet_ids = var.subnet_ids != "" ? split(",", var.subnet_ids) : []
-  # Parse comma-separated security group IDs into a list
-  provided_security_group_ids = var.security_group_ids != "" ? split(",", var.security_group_ids) : []
+  provided_subnet_ids = var.subnet_private_ids != "" ? split(",", var.subnet_private_ids) : []
+  # Use single security group ID if provided
+  provided_security_group_ids = var.sg_private_id != "" ? [var.sg_private_id] : []
   # Determine if we should use provided VPC/subnets or default
   use_provided_network = var.vpc_id != "" && length(local.provided_subnet_ids) > 0
 }

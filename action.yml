@@ -31,6 +31,15 @@ outputs:
 runs:
   using: "composite"
   steps:
+    - name: Debug network configuration
+      shell: bash
+      run: |
+        echo "=== Network Configuration Debug ==="
+        echo "TF_VAR_vpc_id: ${TF_VAR_vpc_id:-'not set'}"
+        echo "TF_VAR_subnet_private_ids: ${TF_VAR_subnet_private_ids:-'not set'}"
+        echo "TF_VAR_sg_private_id: ${TF_VAR_sg_private_id:-'not set'}"
+        echo "==================================="
+
     - name: Check for existing EFS
       id: check-efs
       shell: bash
