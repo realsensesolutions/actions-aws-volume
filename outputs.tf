@@ -9,7 +9,7 @@ output "efs_id" {
 }
 
 output "mount_targets" {
-  description = "List of EFS mount target IDs in default subnets"
+  description = "List of EFS mount target IDs in target subnets"
   value       = aws_efs_mount_target.this[*].id
 }
 

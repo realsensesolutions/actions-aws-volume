@@ -22,7 +22,7 @@ outputs:
     description: 'ID of the EFS file system'
     value: ${{ steps.outputs.outputs.efs_id }}
   mount_targets:
-    description: 'List of EFS mount target IDs in default subnets'
+    description: 'List of EFS mount target IDs in target subnets'
     value: ${{ steps.outputs.outputs.mount_targets }}
   access_point_arn:
     description: 'ARN of the EFS access point'
