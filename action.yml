@@ -22,7 +22,7 @@ outputs:
     description: 'ID of the EFS file system'
     value: ${{ steps.outputs.outputs.efs_id }}
   mount_targets:
-    description: 'List of EFS mount target IDs in all default subnets'
+    description: 'List of EFS mount target IDs in default subnets'
     value: ${{ steps.outputs.outputs.mount_targets }}
   access_point_arn:
     description: 'ARN of the EFS access point'
@@ -114,8 +114,10 @@ runs:
         # Get EFS ARN
         EFS_ARN="arn:aws:elasticfilesystem:$(aws configure get region):$(aws sts get-caller-identity --query 'Account' --output text):file-system/${EFS_ID}"
 
-        # Get mount targets
-        MOUNT_TARGETS=$(aws efs describe-mount-targets --file-system-id ${EFS_ID} --query 'MountTargets[*].MountTargetId' --output json)
+        # Get mount targets and convert from JSON to CSV
+        MOUNT_TARGETS_JSON=$(aws efs describe-mount-targets --file-system-id ${EFS_ID} --query 'MountTargets[*].MountTargetId' --output json)
+        # Remove brackets, quotes and convert commas to CSV format
+        MOUNT_TARGETS_CSV=$(echo $MOUNT_TARGETS_JSON | sed 's/\[//g' | sed 's/\]//g' | sed 's/"//g' | sed 's/, /,/g')
 
         # Check for access points
         ACCESS_POINTS=$(aws efs describe-access-points --file-system-id ${EFS_ID} --query "AccessPoints[?Tags[?Key=='Name' && Value=='${{ inputs.name }}-access-point']].AccessPointId" --output text)
@@ -129,7 +131,7 @@ runs:
 
         echo "efs_id=$EFS_ID" >> "$GITHUB_OUTPUT"
         echo "efs_arn=$EFS_ARN" >> "$GITHUB_OUTPUT"
-        echo "mount_targets=$MOUNT_TARGETS" >> "$GITHUB_OUTPUT"
+        echo "mount_targets=$MOUNT_TARGETS_CSV" >> "$GITHUB_OUTPUT"
         echo "access_point_arn=$ACCESS_POINT_ARN" >> "$GITHUB_OUTPUT"
 
     - name: Set final outputs
