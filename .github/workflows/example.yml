@@ -37,6 +37,7 @@ jobs:
         id: efs
         with:
           name: efs-example-db
+          action: destroy
 
       # Output EFS information
       - name: Display EFS information

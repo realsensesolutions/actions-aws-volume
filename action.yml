@@ -49,7 +49,7 @@ runs:
           echo "exists=false" >> $GITHUB_OUTPUT
         fi
 
-    - name: Terraform init
+    - name: Terraform init for apply/plan
       if: inputs.action != 'destroy' && steps.check-efs.outputs.exists != 'true'
       run: |
         terraform init \
@@ -70,13 +70,16 @@ runs:
       env:
         TF_VAR_name: ${{ inputs.name }}
 
-    - name: Terraform destroy
+    - name: Terraform init and destroy
       if: inputs.action == 'destroy'
       run: |
+        echo "Initializing Terraform for destroy operation..."
         terraform init \
           -backend-config="bucket=$TF_BACKEND_s3" \
           -backend-config="dynamodb_table=$TF_BACKEND_dynamodb" \
           -backend-config="key=$TF_BACKEND_key"
+
+        echo "Destroying resources..."
         terraform destroy -auto-approve
       shell: bash
       working-directory: ${{ github.action_path }}
@@ -106,7 +109,7 @@ runs:
 
     - name: Get existing EFS details
       id: existing-efs
-      if: steps.check-efs.outputs.exists == 'true'
+      if: inputs.action != 'destroy' && steps.check-efs.outputs.exists == 'true'
       shell: bash
       run: |
         EFS_ID="${{ steps.check-efs.outputs.efs_id }}"
@@ -138,7 +141,13 @@ runs:
       id: outputs
       shell: bash
       run: |
-        if [ "${{ steps.check-efs.outputs.exists }}" == "true" ]; then
+        if [ "${{ inputs.action }}" == "destroy" ]; then
+          # For destroy action, we don't have meaningful outputs
+          echo "efs_id=destroyed" >> "$GITHUB_OUTPUT"
+          echo "efs_arn=destroyed" >> "$GITHUB_OUTPUT"
+          echo "mount_targets=destroyed" >> "$GITHUB_OUTPUT"
+          echo "access_point_arn=destroyed" >> "$GITHUB_OUTPUT"
+        elif [ "${{ steps.check-efs.outputs.exists }}" == "true" ]; then
           echo "efs_id=${{ steps.existing-efs.outputs.efs_id }}" >> "$GITHUB_OUTPUT"
           echo "efs_arn=${{ steps.existing-efs.outputs.efs_arn }}" >> "$GITHUB_OUTPUT"
           echo "mount_targets=${{ steps.existing-efs.outputs.mount_targets }}" >> "$GITHUB_OUTPUT"
