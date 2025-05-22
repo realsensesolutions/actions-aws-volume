@@ -1,0 +1,47 @@
+name: Create/Find EFS Volume
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # Required for AWS authentication
+      contents: read   # Required to checkout the repository
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: us-east-1
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: ${{ github.actor }}
+
+      # Optional: Set up Terraform backend
+      - name: Set up backend
+        uses: alonch/actions-aws-backend-setup@main
+        id: backend
+        with:
+          instance: efs-example
+
+      # Create or find an EFS volume with Name tag "db"
+      - name: Create/Find EFS volume
+        uses: ./
+        id: efs
+        with:
+          name: efs-example-db
+
+      # Output EFS information
+      - name: Display EFS information
+        run: |
+          echo "EFS ID: ${{ steps.efs.outputs.efs_id }}"
+          echo "EFS ARN: ${{ steps.efs.outputs.efs_arn }}"
+          echo "EFS Access Point ARN: ${{ steps.efs.outputs.access_point_arn }}"
+          echo "EFS Mount Targets: ${{ steps.efs.outputs.mount_targets }}"

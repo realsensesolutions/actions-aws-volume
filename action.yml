@@ -1,0 +1,149 @@
+name: 'AWS EFS Volume'
+description: 'Create or find an AWS EFS volume for Lambda functions'
+author: 'alonch'
+branding:
+  icon: 'database'
+  color: 'orange'
+
+inputs:
+  action:
+    description: 'Desired outcome: apply, plan or destroy'
+    required: false
+    default: 'apply'
+  name:
+    description: 'EFS volume name - will be used as the Name tag for the EFS'
+    required: true
+
+outputs:
+  efs_arn:
+    description: 'ARN of the EFS file system'
+    value: ${{ steps.outputs.outputs.efs_arn }}
+  efs_id:
+    description: 'ID of the EFS file system'
+    value: ${{ steps.outputs.outputs.efs_id }}
+  mount_targets:
+    description: 'List of EFS mount target IDs in all default subnets'
+    value: ${{ steps.outputs.outputs.mount_targets }}
+  access_point_arn:
+    description: 'ARN of the EFS access point'
+    value: ${{ steps.outputs.outputs.access_point_arn }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Check for existing EFS
+      id: check-efs
+      shell: bash
+      run: |
+        echo "Searching for EFS with tag Name=${{ inputs.name }}..."
+
+        # Get existing EFS file systems with the given Name tag
+        EFS_ID=$(aws efs describe-file-systems --query "FileSystems[?Tags[?Key=='Name' && Value=='${{ inputs.name }}']].FileSystemId" --output text)
+
+        if [ -n "$EFS_ID" ]; then
+          echo "Found existing EFS with ID: $EFS_ID"
+          echo "exists=true" >> $GITHUB_OUTPUT
+          echo "efs_id=$EFS_ID" >> $GITHUB_OUTPUT
+        else
+          echo "No existing EFS found with Name=${{ inputs.name }}"
+          echo "exists=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Terraform init
+      if: inputs.action != 'destroy' && steps.check-efs.outputs.exists != 'true'
+      run: |
+        terraform init \
+          -backend-config="bucket=$TF_BACKEND_s3" \
+          -backend-config="dynamodb_table=$TF_BACKEND_dynamodb" \
+          -backend-config="key=$TF_BACKEND_key"
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        TF_BACKEND_key: "actions-aws-volume/${{ inputs.name }}"
+        TF_VAR_name: ${{ inputs.name }}
+
+    - name: Terraform plan
+      if: inputs.action == 'plan' && steps.check-efs.outputs.exists != 'true'
+      run: terraform plan
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        TF_VAR_name: ${{ inputs.name }}
+
+    - name: Terraform destroy
+      if: inputs.action == 'destroy'
+      run: |
+        terraform init \
+          -backend-config="bucket=$TF_BACKEND_s3" \
+          -backend-config="dynamodb_table=$TF_BACKEND_dynamodb" \
+          -backend-config="key=$TF_BACKEND_key"
+        terraform destroy -auto-approve
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        TF_BACKEND_key: "actions-aws-volume/${{ inputs.name }}"
+        TF_VAR_name: ${{ inputs.name }}
+
+    - name: Terraform apply
+      id: terraform
+      if: inputs.action == 'apply' && steps.check-efs.outputs.exists != 'true'
+      run: |
+        terraform apply -auto-approve
+        EFS_ARN=$(terraform output -raw efs_arn | tr -d '\r\n')
+        EFS_ID=$(terraform output -raw efs_id | tr -d '\r\n')
+        MOUNT_TARGETS=$(terraform output -json mount_targets | tr -d '\r\n')
+        ACCESS_POINT_ARN=$(terraform output -raw access_point_arn | tr -d '\r\n')
+
+        # Set outputs temporarily
+        echo "efs_arn=$EFS_ARN" >> "$GITHUB_OUTPUT"
+        echo "efs_id=$EFS_ID" >> "$GITHUB_OUTPUT"
+        echo "mount_targets=$MOUNT_TARGETS" >> "$GITHUB_OUTPUT"
+        echo "access_point_arn=$ACCESS_POINT_ARN" >> "$GITHUB_OUTPUT"
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        TF_VAR_name: ${{ inputs.name }}
+
+    - name: Get existing EFS details
+      id: existing-efs
+      if: steps.check-efs.outputs.exists == 'true'
+      shell: bash
+      run: |
+        EFS_ID="${{ steps.check-efs.outputs.efs_id }}"
+
+        # Get EFS ARN
+        EFS_ARN="arn:aws:elasticfilesystem:$(aws configure get region):$(aws sts get-caller-identity --query 'Account' --output text):file-system/${EFS_ID}"
+
+        # Get mount targets
+        MOUNT_TARGETS=$(aws efs describe-mount-targets --file-system-id ${EFS_ID} --query 'MountTargets[*].MountTargetId' --output json)
+
+        # Check for access points
+        ACCESS_POINTS=$(aws efs describe-access-points --file-system-id ${EFS_ID} --query "AccessPoints[?Tags[?Key=='Name' && Value=='${{ inputs.name }}-access-point']].AccessPointId" --output text)
+
+        if [ -n "$ACCESS_POINTS" ]; then
+          ACCESS_POINT_ID=$(echo $ACCESS_POINTS | awk '{print $1}')
+          ACCESS_POINT_ARN="arn:aws:elasticfilesystem:$(aws configure get region):$(aws sts get-caller-identity --query 'Account' --output text):access-point/${ACCESS_POINT_ID}"
+        else
+          ACCESS_POINT_ARN=""
+        fi
+
+        echo "efs_id=$EFS_ID" >> "$GITHUB_OUTPUT"
+        echo "efs_arn=$EFS_ARN" >> "$GITHUB_OUTPUT"
+        echo "mount_targets=$MOUNT_TARGETS" >> "$GITHUB_OUTPUT"
+        echo "access_point_arn=$ACCESS_POINT_ARN" >> "$GITHUB_OUTPUT"
+
+    - name: Set final outputs
+      id: outputs
+      shell: bash
+      run: |
+        if [ "${{ steps.check-efs.outputs.exists }}" == "true" ]; then
+          echo "efs_id=${{ steps.existing-efs.outputs.efs_id }}" >> "$GITHUB_OUTPUT"
+          echo "efs_arn=${{ steps.existing-efs.outputs.efs_arn }}" >> "$GITHUB_OUTPUT"
+          echo "mount_targets=${{ steps.existing-efs.outputs.mount_targets }}" >> "$GITHUB_OUTPUT"
+          echo "access_point_arn=${{ steps.existing-efs.outputs.access_point_arn }}" >> "$GITHUB_OUTPUT"
+        else
+          echo "efs_id=${{ steps.terraform.outputs.efs_id }}" >> "$GITHUB_OUTPUT"
+          echo "efs_arn=${{ steps.terraform.outputs.efs_arn }}" >> "$GITHUB_OUTPUT"
+          echo "mount_targets=${{ steps.terraform.outputs.mount_targets }}" >> "$GITHUB_OUTPUT"
+          echo "access_point_arn=${{ steps.terraform.outputs.access_point_arn }}" >> "$GITHUB_OUTPUT"
+        fi
