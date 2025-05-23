@@ -1,5 +1,5 @@
 name: 'AWS EFS Volume'
-description: 'Create or find an AWS EFS volume for Lambda functions'
+description: 'Manage AWS EFS volume for Lambda functions using Terraform'
 author: 'alonch'
 branding:
   icon: 'database'
@@ -31,35 +31,8 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Debug network configuration
-      shell: bash
-      run: |
-        echo "=== Network Configuration Debug ==="
-        echo "TF_VAR_vpc_id: ${TF_VAR_vpc_id:-'not set'}"
-        echo "TF_VAR_subnet_private_ids: ${TF_VAR_subnet_private_ids:-'not set'}"
-        echo "TF_VAR_sg_private_id: ${TF_VAR_sg_private_id:-'not set'}"
-        echo "==================================="
-
-    - name: Check for existing EFS
-      id: check-efs
-      shell: bash
-      run: |
-        echo "Searching for EFS with tag Name=${{ inputs.name }}..."
-
-        # Get existing EFS file systems with the given Name tag
-        EFS_ID=$(aws efs describe-file-systems --query "FileSystems[?Tags[?Key=='Name' && Value=='${{ inputs.name }}']].FileSystemId" --output text)
-
-        if [ -n "$EFS_ID" ]; then
-          echo "Found existing EFS with ID: $EFS_ID"
-          echo "exists=true" >> $GITHUB_OUTPUT
-          echo "efs_id=$EFS_ID" >> $GITHUB_OUTPUT
-        else
-          echo "No existing EFS found with Name=${{ inputs.name }}"
-          echo "exists=false" >> $GITHUB_OUTPUT
-        fi
-
     - name: Terraform init for apply/plan
-      if: inputs.action != 'destroy' && steps.check-efs.outputs.exists != 'true'
+      if: inputs.action != 'destroy'
       run: |
         terraform init \
           -backend-config="bucket=$TF_BACKEND_s3" \
@@ -72,7 +45,7 @@ runs:
         TF_VAR_name: ${{ inputs.name }}
 
     - name: Terraform plan
-      if: inputs.action == 'plan' && steps.check-efs.outputs.exists != 'true'
+      if: inputs.action == 'plan'
       run: terraform plan
       shell: bash
       working-directory: ${{ github.action_path }}
@@ -98,7 +71,7 @@ runs:
 
     - name: Terraform apply
       id: terraform
-      if: inputs.action == 'apply' && steps.check-efs.outputs.exists != 'true'
+      if: inputs.action == 'apply'
       run: |
         terraform apply -auto-approve
         EFS_ARN=$(terraform output -raw efs_arn | tr -d '\r\n')
@@ -116,36 +89,6 @@ runs:
       env:
         TF_VAR_name: ${{ inputs.name }}
 
-    - name: Get existing EFS details
-      id: existing-efs
-      if: inputs.action != 'destroy' && steps.check-efs.outputs.exists == 'true'
-      shell: bash
-      run: |
-        EFS_ID="${{ steps.check-efs.outputs.efs_id }}"
-
-        # Get EFS ARN
-        EFS_ARN="arn:aws:elasticfilesystem:$(aws configure get region):$(aws sts get-caller-identity --query 'Account' --output text):file-system/${EFS_ID}"
-
-        # Get mount targets and convert from JSON to CSV
-        MOUNT_TARGETS_JSON=$(aws efs describe-mount-targets --file-system-id ${EFS_ID} --query 'MountTargets[*].MountTargetId' --output json)
-        # Remove brackets, quotes and convert commas to CSV format
-        MOUNT_TARGETS_CSV=$(echo $MOUNT_TARGETS_JSON | sed 's/\[//g' | sed 's/\]//g' | sed 's/"//g' | sed 's/, /,/g')
-
-        # Check for access points
-        ACCESS_POINTS=$(aws efs describe-access-points --file-system-id ${EFS_ID} --query "AccessPoints[?Tags[?Key=='Name' && Value=='${{ inputs.name }}-access-point']].AccessPointId" --output text)
-
-        if [ -n "$ACCESS_POINTS" ]; then
-          ACCESS_POINT_ID=$(echo $ACCESS_POINTS | awk '{print $1}')
-          ACCESS_POINT_ARN="arn:aws:elasticfilesystem:$(aws configure get region):$(aws sts get-caller-identity --query 'Account' --output text):access-point/${ACCESS_POINT_ID}"
-        else
-          ACCESS_POINT_ARN=""
-        fi
-
-        echo "efs_id=$EFS_ID" >> "$GITHUB_OUTPUT"
-        echo "efs_arn=$EFS_ARN" >> "$GITHUB_OUTPUT"
-        echo "mount_targets=$MOUNT_TARGETS_CSV" >> "$GITHUB_OUTPUT"
-        echo "access_point_arn=$ACCESS_POINT_ARN" >> "$GITHUB_OUTPUT"
-
     - name: Set final outputs
       id: outputs
       shell: bash
@@ -156,12 +99,8 @@ runs:
           echo "efs_arn=destroyed" >> "$GITHUB_OUTPUT"
           echo "mount_targets=destroyed" >> "$GITHUB_OUTPUT"
           echo "access_point_arn=destroyed" >> "$GITHUB_OUTPUT"
-        elif [ "${{ steps.check-efs.outputs.exists }}" == "true" ]; then
-          echo "efs_id=${{ steps.existing-efs.outputs.efs_id }}" >> "$GITHUB_OUTPUT"
-          echo "efs_arn=${{ steps.existing-efs.outputs.efs_arn }}" >> "$GITHUB_OUTPUT"
-          echo "mount_targets=${{ steps.existing-efs.outputs.mount_targets }}" >> "$GITHUB_OUTPUT"
-          echo "access_point_arn=${{ steps.existing-efs.outputs.access_point_arn }}" >> "$GITHUB_OUTPUT"
         else
+          # Always use Terraform outputs for apply/plan actions
           echo "efs_id=${{ steps.terraform.outputs.efs_id }}" >> "$GITHUB_OUTPUT"
           echo "efs_arn=${{ steps.terraform.outputs.efs_arn }}" >> "$GITHUB_OUTPUT"
           echo "mount_targets=${{ steps.terraform.outputs.mount_targets }}" >> "$GITHUB_OUTPUT"
