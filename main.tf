@@ -2,8 +2,6 @@ locals {
   volume_name = var.name
   # Parse comma-separated subnet IDs into a list
   provided_subnet_ids = var.subnet_private_ids != "" ? split(",", var.subnet_private_ids) : []
-  # Use single security group ID if provided
-  provided_security_group_ids = var.sg_private_id != "" ? [var.sg_private_id] : []
   # Determine if we should use provided VPC/subnets or default
   use_provided_network = var.vpc_id != "" && length(local.provided_subnet_ids) > 0
 }
@@ -44,9 +42,8 @@ locals {
   target_subnet_ids = local.use_provided_network ? local.provided_subnet_ids : data.aws_subnets.default[0].ids
 }
 
-# Create security group for EFS (only if no security groups provided)
+# Always create EFS security group with proper NFS rules
 resource "aws_security_group" "efs" {
-  count       = length(local.provided_security_group_ids) > 0 ? 0 : 1
   name        = "${local.volume_name}-efs-sg-${random_id.suffix.hex}"
   description = "Allow NFS traffic to EFS"
   vpc_id      = local.target_vpc_id
@@ -71,11 +68,6 @@ resource "aws_security_group" "efs" {
   }
 }
 
-# Determine which security groups to use
-locals {
-  target_security_groups = length(local.provided_security_group_ids) > 0 ? local.provided_security_group_ids : [aws_security_group.efs[0].id]
-}
-
 # Create EFS file system
 resource "aws_efs_file_system" "this" {
   creation_token = "${local.volume_name}-efs-${random_id.suffix.hex}"
@@ -95,7 +87,7 @@ resource "aws_efs_mount_target" "this" {
   count           = length(local.target_subnet_ids)
   file_system_id  = aws_efs_file_system.this.id
   subnet_id       = local.target_subnet_ids[count.index]
-  security_groups = local.target_security_groups
+  security_groups = [aws_security_group.efs.id]
 }
 
 # Wait for EFS mount targets to become fully available

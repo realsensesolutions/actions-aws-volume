@@ -19,9 +19,3 @@ variable "subnet_private_ids" {
   type        = string
   default     = ""
 }
-
-variable "sg_private_id" {
-  description = "Private security group ID for EFS (optional - creates new security group if not provided)"
-  type        = string
-  default     = ""
-}

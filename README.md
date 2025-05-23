@@ -4,13 +4,14 @@
 
 ## Description
 
-This GitHub Action creates or finds an AWS Elastic File System (EFS) volume that can be used for Lambda functions or other AWS services. It uses Terraform to provision the resources.
+This GitHub Action manages an AWS Elastic File System (EFS) volume using Terraform. It can work with both default VPC and custom private networks, and always creates EFS-specific security groups for proper NFS access.
 
 ## Features
 
-- Searches for an existing EFS by tag name
-- Creates a new EFS if one with the specified name doesn't exist
-- Creates mount targets in all default subnets
+- Manages EFS volumes using Terraform for proper state tracking
+- Works with default VPC or custom private networks (via network actions)
+- Always creates EFS-specific security groups with proper NFS rules
+- Creates mount targets in appropriate subnets (private when available, default otherwise)
 - Creates an access point for the EFS
 - Returns ARNs and IDs as outputs for use in other steps
 
